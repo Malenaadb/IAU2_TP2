@@ -1,0 +1,169 @@
+---
+title: "Trabajo Practico N°2"
+author: "Malena De Baere"
+date: "2023-09-17"
+output: html_document
+---
+
+##Pueblos Indigenas en Argentina 
+
+En el marco del trabajo práctico N°2 para la materia *Instrumentos de Análisis Urbano II* se realizará un análisis de la ubicación de comunidades aborigenes en Argentina. En este sentido, se buscará responder a la pregunta de: ¿en que sectores del pais existen mayor cantidad de registros sobre la localización de comunidades aborigenes?
+
+Para contestar dicha pregunta, se procede primeramente a activar las librerías:
+
+
+```{r}
+library(sf)
+library(dplyr)
+library(tidyverse)
+library(geoAr)
+library(ggplot2)
+```
+
+Posteriormente, se procede a integrar al ambiente las bases de datos con las que se trabajará.
+```{r}
+datos_comunidades<-read.csv("http://datos.jus.gob.ar/dataset/32967733-0d1b-4246-a8ef-e9b84ad33b1f/resource/f9b57566-3e7c-4449-b984-49a26897eb77/download/listado-comunidades-indigenas-20230818.csv",  stringsAsFactors = TRUE,
+                         encoding = "UTF-8")
+```
+
+
+```{r}
+class(datos_comunidades)
+summary(datos_comunidades)
+```
+
+Este primer dataframe cuenta con datos provenientes del Ministerio de Justicia y Derechos Humanos de la Argentina relativos al año 2023. Posee 1853 registros y 26 columnas con información de comunidades aborigenes relevadas por dicho Ministerio. Dentro de ella, se encuentras datos vinculados a sus nombres, provincia donde se ubican, datos sobre sus registros con personería jurídica entre otros. En relación a la carga de los datos, se observan más de 880 celdas vacias con información relativa a las coordenadas de ubicación de las comunidades.
+   
+
+En segundo lugar, se importan los poligonos correspondientes a la delimitación del territorio argentino, incluyendo la división por provincias. 
+
+```{r}
+argentina <- st_read("data/gadm41_ARG_1.shp",
+                stringsAsFactors = TRUE,
+                         options = "ENCODING=UTF-8")
+```
+El presente dataset posee 24 registros y 11 columnas relativos a la longitud y latitud del pais y sus provincias. 
+
+Debido a que los nombres de las variables no son facilmente trabajables, se renombra el dato correspondiente a las provincias para que luego sea más sencillo de trabajarlo. 
+
+```{r}
+argentina <- rename(argentina,provincia=NAME_1)
+```
+
+Se realiza un visualización para confirmar: 
+
+```{r}
+ggplot()+
+  geom_sf(data=argentina)+
+  theme_minimal()
+```
+
+
+Se realiza un filtro de las columnas elegidas para el análisis. 
+
+
+```{r}
+filtro <- datos_comunidades %>% 
+  select(comunidad_nombre, comunidad_pueblo, comunidad_provincia, comunidad_zona, comunidad_latitud_decimales, comunidad_longitud_decimales)
+```
+
+
+Se modifica el nombre de las categorias: "comunidad pueblo" "comunidad_provincia", "comunidad_latitud_decimales" y "comunidad_longitud_decimales"
+```{r}
+renombre <- rename(filtro,provincia=comunidad_provincia, pueblo=comunidad_pueblo, latitud=comunidad_latitud_decimales,longitud=comunidad_longitud_decimales)
+```
+
+
+```{r}
+summary(renombre)
+```
+
+Se intentó convertir del dataset "renombre" en geometría PUNTO, para poder visualizar en el mapa de argentina la ubicación de las comunidades. Debido a que no todas las celdas de coordenadas se encontraban completas, imposibilitó utilizar algunas funciones simplificadas para su reconversión. 
+
+Para resolver este paso, se omitieron las celdas vacias y se procedió a trabajar con las que si contaban con la información. En dicho cambio, también se modifica la geometria del dataset a formato *"PUNTO"*
+
+```{r}
+comunidad_completo <- na.omit(renombre)
+comunidad_geo <- st_as_sf(comunidad_completo, coords = c("longitud", "latitud"),crs = 4326)
+
+```
+
+```{r}
+ggplot()+
+  geom_sf(data=argentina)+
+  geom_sf(data=comunidad_geo, aes(color=pueblo))+
+  labs(color="Pueblo")+
+  theme_minimal()
+```
+
+
+
+A simple vista se puede observar que en la región norte del pais es donde se alojan la mayor cantidad de puntos. Pero como el mapa no ofrece claridad para el análisis, se optó utilizar otras formas de graficar los resultados. 
+
+Tomando la categoría de *tipo de zona* en la que se ubican las comunidades, se realiza un gráfico de barras que permita identificar si se trata de ubicaciones rurales, urbanas o de ambos tipos. 
+
+```{r}
+ggplot(renombre)+
+  geom_bar(aes(x=comunidad_zona, fill=pueblo),show.legend=FALSE) + 
+  labs(title="Zona en la que se ubican las comunidades",
+       x="Tipo de ubicación",
+       y="Cantidad de Comunidades",
+       caption="Fuente: Ministerio de Justicia y Derechos Humanos 2023")+
+  theme_minimal()+
+  theme (panel.background = element_rect(fill = "white"),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank()  )
+```
+En este primer gráfico, podemos observar que la mayoría de las comunidades aborigenes de Argentina se encuentran localizadas en zonas rurales. Aún así, se identifica que existen muchos casos sin registro, lo cual puede modificar el resultado final si se lograse recolectar. 
+
+Posteriormente, se intentará visualizar si dicha tendencia, se repite dentro de las provincias, 
+
+
+```{r}
+ggplot(renombre)+
+  geom_bar(aes(x=comunidad_zona, fill=pueblo),show.legend=FALSE) + coord_flip()+
+  labs(title="Zona en la que se ubican las comunidades por provincia",
+       x="Tipo de ubicación",
+       y="Cantidad de Comunidades",
+       caption="Fuente: Ministerio de Justicia y Derechos Humanos 2023")+
+  facet_wrap(~provincia)+
+   theme_minimal()
+  
+```
+
+A partir del gráfico obtenido, se puede observar que no es homogénea la distribución en las provincias de las comunidades aborigenes incluidas según el registro. Fácilmente se puede observar que una supremacia en los registros de las provincias de Salta, Jujuy y Formosa. En los 2 primeros, se mantiene la coincidencia de mayor cantidad de comunidades en zonas rurales. 
+Por otro lado, se visualiza que en otras provincias hay mayor cantidad de registros en zonas urbanas.   
+
+En segundo lugar, y en consonancia con lo que se identifica en el gráfico anterior, se agrupa la cantidad de comunidades por provincia:
+
+```{r}
+agrupado <- renombre %>%
+           group_by(provincia) %>%
+  summarise(cantidad=n())
+```
+
+
+Posteriormente al agrupamiento, se realiza la union de las bases de Argentina con la de las comunidades para luego generar un mapa coroplético que permita identificar qué provincias continienen mayor registros de comunidades aborigenes. 
+
+
+
+```{r}
+datos_combinados <- merge(argentina, agrupado, by.x = "provincia", by.y = "provincia")
+```
+
+
+```{r}
+ggplot()+
+  geom_sf(data=datos_combinados, aes(fill=cantidad), color=NA) +
+      labs(title = "Cantidad de comunidades indigenas por provincia",
+         subtitle = "Argentina - 2023",
+         fill = "Cantidad",
+         caption= "Fuente: Ministerio de Justicia y Derechos Humanos") +
+   scale_fill_gradient(low = "lightblue", high = "darkblue", name = "Cantidad de comunidades")+
+  theme_light()
+```
+
+A partir del presente mapa y con la información recabada hasta el momento, ya se pueden contestar las preguntas planteadas al principio de este trabajo:
+Tal como se puede observar tanto en el mapa coroplético como en el gráfico de barras, la mayor cantidad de comunidades se registran en la zona noroeste del pais. Sobre este punto, la provincia que más registro posee es Salta, seguida por Jujuy, Formosa, Misiones y Chaco. Por otro lado, las que menos registros poseen son: La Rioja, Tierra del Fuego y Corrientes.  
+Llama la atención aquellas provincias que solo poseen 1 o 2 registros abriendo el interrogante de si hay una vacancia de información respecto a la totalidad de comunidades en cada provincia o si el estimado guarda relación con la realidad de los territorios.
+
